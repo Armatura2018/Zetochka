@@ -3,7 +3,7 @@ import google.generativeai as genai
 import asyncio
 
 # === НАСТРОЙКИ ===
-DISCORD_TOKEN = '2f322d597a84fefe430d55b7a75a9dd3228b30002469a574e29b8a7efa5f0d56'
+DISCORD_TOKEN = 'MTUxMTEwMTU4NzQzNzc4MTEzMw.G0EEzR.mXnPKS7s_wFKi8zxarVkiAd4BjzN26xYk6DmJo'
 GEMINI_API_KEY = 'AQ.Ab8RN6JxXSE33sEnogt3aV8WRTFrmNY33i_1JqeZ01lknPSgJg'
 SUPPORT_ROLE_ID = 1511111151230914680
 
