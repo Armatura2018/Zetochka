@@ -105,10 +105,11 @@ async def on_message(message):
     if message.channel.id in finished_tickets:
         return
 
-    # === НОВЫЙ СПОСОБ СОЗДАНИЯ ЧАТА GEMINI ===
+   # === НОВЫЙ СПОСОБ СОЗДАНИЯ ЧАТА GEMINI (Асинхронный) ===
     if message.channel.id not in chat_sessions:
         config = types.GenerateContentConfig(system_instruction=SYSTEM_PROMPT)
-        chat_sessions[message.channel.id] = client_gemini.chats.create(
+        # Используем .aio.chats для асинхронного Дискорд-бота
+        chat_sessions[message.channel.id] = client_gemini.aio.chats.create(
             model="gemini-1.5-flash", 
             config=config
         )
@@ -117,8 +118,8 @@ async def on_message(message):
 
     async with message.channel.typing():
         try:
-            # Отправка сообщения в новом API
-            response = chat.send_message(message.content)
+            # ДОБАВЛЕН await — теперь бот ждет ответа правильно
+            response = await chat.send_message(message.content)
             reply = response.text
 
             if "[ЗАЯВКА_ГОТОВА]" in reply:
@@ -130,7 +131,10 @@ async def on_message(message):
                 await message.channel.send(reply)
                 
         except Exception as e:
-            print(f"Ошибка связи с Gemini: {e}")
-            await message.channel.send("Произошла ошибка связи. Повторите, пожалуйста.")
+            # flush=True заставляет Python моментально выкинуть лог в консоль хостинга
+            print(f"Ошибка: {e}", flush=True) 
+            
+            # ВРЕМЕННО: Бот напишет саму ошибку прямо в тикет Дискорда!
+            await message.channel.send(f"⚠️ **ТЕХНИЧЕСКАЯ ОШИБКА:**\n```python\n{e}\n```\n*Скопируй этот текст ошибки и покажи мне.*")
 
 client.run(DISCORD_TOKEN)
