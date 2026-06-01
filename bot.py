@@ -1,23 +1,23 @@
 import discord
 import google.generativeai as genai
 import asyncio
+import os
+from dotenv import load_dotenv
 
-# === НАСТРОЙКИ ===
-DISCORD_TOKEN = 'MTUxMTEwMTU4NzQzNzc4MTEzMw.G0EEzR.mXnPKS7s_wFKi8zxarVkiAd4BjzN26xYk6DmJo'
-GEMINI_API_KEY = 'AQ.Ab8RN6JxXSE33sEnogt3aV8WRTFrmNY33i_1JqeZ01lknPSgJg'
-SUPPORT_ROLE_ID = 1511111151230914680
+# === ЗАГРУЗКА НАСТРОЕК ИЗ .env ===
+load_dotenv() # Эта команда читает файл .env
 
-# --- НОВЫЕ НАСТРОЙКИ ---
-# Бот будет игнорировать тикеты с этими названиями:
+DISCORD_TOKEN = os.getenv('DISCORD_TOKEN')
+GEMINI_API_KEY = os.getenv('GEMINI_API_KEY')
+# Переводим ID роли в число, так как из .env всё достается текстом
+SUPPORT_ROLE_ID = int(os.getenv('SUPPORT_ROLE_ID'))
+
+# --- ПРОЧИЕ НАСТРОЙКИ ---
 IGNORED_TICKETS = ["ticket-1982"] 
-
-# Начиная с какого номера тикета бот должен работать (если 0 - работает во всех)
-START_TICKET_NUMBER = 0
+START_TICKET_NUMBER = 1 # Бот начнет работать с ticket-0001 и далее
 
 # Настройка API Gemini
 genai.configure(api_key=GEMINI_API_KEY)
-
-# Инструкция для ИИ (Добавили ссылки на фото)
 SYSTEM_PROMPT = """
 Ты — вежливый продавец-консультант в Discord магазине. 
 
@@ -45,50 +45,61 @@ intents = discord.Intents.default()
 intents.message_content = True
 client = discord.Client(intents=intents)
 
+# Базы данных в оперативной памяти
 chat_sessions = {}
 finished_tickets = set()
+user_replied_tickets = set() # Сюда сохраняем тикеты, где клиент уже что-то написал
 
 @client.event
 async def on_ready():
-    print(f'Бот {client.user} успешно запущен!')
+    print(f'Бот {client.user} успешно запущен и ключи загружены!')
 
-# === НОВОЕ: Автоматическое приветствие ===
+# === Таймер на приветствие ===
 @client.event
 async def on_guild_channel_create(channel):
-    # Проверяем, что это тикет и он не в черном списке
     if channel.name.startswith("ticket-") and channel.name not in IGNORED_TICKETS:
-        
-        # Проверяем стартовый номер (если в названии есть число)
         try:
+            # Получаем номер тикета (например, из "ticket-0001" получится 1)
             ticket_num = int(channel.name.split('-')[1])
             if ticket_num < START_TICKET_NUMBER:
-                return # Игнорируем старые тикеты
+                return
         except (IndexError, ValueError):
-            pass # Если после "ticket-" не число, просто продолжаем
+            pass
 
-        # Ждем 2 секунды, чтобы Ticket Tool успел добавить пользователя в канал
-        await asyncio.sleep(2)
-        await channel.send("👋 Здравствуйте! Я виртуальный помощник. Рассказать вам про наши товары или показать фотографии?")
+        # Ждем 1 час (3600 секунд). 
+        # СОВЕТ: Для тестирования поменяй 3600 на 10 (10 секунд), чтобы проверить, как работает!
+        await asyncio.sleep(3600)
+        
+        # Проверяем, не написал ли пользователь за этот час
+        if channel.id not in user_replied_tickets:
+            try:
+                await channel.send("👋 Здравствуйте! Заметил, что вы открыли тикет. Я виртуальный помощник. Подсказать вам что-то по нашим товарам?")
+            except discord.errors.NotFound:
+                # Если за этот час тикет уже успели удалить, бот просто проигнорирует ошибку
+                pass
 
 @client.event
 async def on_message(message):
-    if message.author == client.user:
+    # Игнорируем самого бота и других ботов (например, самого Ticket Tool)
+    if message.author.bot:
         return
 
     if not message.channel.name.startswith("ticket-"):
         return
 
-    # === НОВОЕ: Игнорируем каналы из черного списка ===
     if message.channel.name in IGNORED_TICKETS:
         return
 
-    # === НОВОЕ: Игнорируем тикеты до определенного номера ===
     try:
         ticket_num = int(message.channel.name.split('-')[1])
         if ticket_num < START_TICKET_NUMBER:
             return
     except (IndexError, ValueError):
         pass
+
+    # === Фиксируем, что клиент что-то написал ===
+    # Если клиент написал, таймер приветствия из on_guild_channel_create уже не сработает
+    user_replied_tickets.add(message.channel.id)
 
     if message.channel.id in finished_tickets:
         return
@@ -112,7 +123,7 @@ async def on_message(message):
                 await message.channel.send(reply)
                 
         except Exception as e:
-            print(f"Ошибка: {e}")
+            print(f"Ошибка связи с Gemini: {e}")
             await message.channel.send("Произошла ошибка связи. Повторите, пожалуйста.")
 
 client.run(DISCORD_TOKEN)
