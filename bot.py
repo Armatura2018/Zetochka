@@ -68,7 +68,7 @@ async def on_guild_channel_create(channel):
 
         # Ждем 1 час (3600 секунд). 
         # СОВЕТ: Для тестирования поменяй 3600 на 10 (10 секунд), чтобы проверить, как работает!
-        await asyncio.sleep(3600)
+        await asyncio.sleep(10)
         
         # Проверяем, не написал ли пользователь за этот час
         if channel.id not in user_replied_tickets:
