@@ -1,23 +1,35 @@
 import discord
-import google.generativeai as genai
+from google import genai
+from google.genai import types
 import asyncio
 import os
+import sys
 from dotenv import load_dotenv
 
 # === ЗАГРУЗКА НАСТРОЕК ИЗ .env ===
-load_dotenv() # Эта команда читает файл .env
+load_dotenv() 
 
 DISCORD_TOKEN = os.getenv('DISCORD_TOKEN')
 GEMINI_API_KEY = os.getenv('GEMINI_API_KEY')
-# Переводим ID роли в число, так как из .env всё достается текстом
-SUPPORT_ROLE_ID = int(os.getenv('SUPPORT_ROLE_ID'))
+SUPPORT_ROLE_ID_STR = os.getenv('SUPPORT_ROLE_ID')
+
+# ЗАЩИТА: Проверяем, все ли ключи на месте
+if not DISCORD_TOKEN or not GEMINI_API_KEY or not SUPPORT_ROLE_ID_STR:
+    print("❌ КРИТИЧЕСКАЯ ОШИБКА: Не все переменные найдены!")
+    print("Проверь файл .env или 'Секреты' в панели хостинга.")
+    print(f"DISCORD_TOKEN: {'Найден' if DISCORD_TOKEN else 'НЕ НАЙДЕН'}")
+    print(f"GEMINI_API_KEY: {'Найден' if GEMINI_API_KEY else 'НЕ НАЙДЕН'}")
+    print(f"SUPPORT_ROLE_ID: {'Найден' if SUPPORT_ROLE_ID_STR else 'НЕ НАЙДЕН'}")
+    sys.exit(1) # Останавливаем скрипт, так как без ключей он не будет работать
+
+SUPPORT_ROLE_ID = int(SUPPORT_ROLE_ID_STR)
 
 # --- ПРОЧИЕ НАСТРОЙКИ ---
 IGNORED_TICKETS = ["ticket-1982"] 
 START_TICKET_NUMBER = 1 # Бот начнет работать с ticket-0001 и далее
 
-# Настройка API Gemini
-genai.configure(api_key=GEMINI_API_KEY)
+# Настройка НОВОГО API Gemini
+client_gemini = genai.Client(api_key=GEMINI_API_KEY)
 SYSTEM_PROMPT = """
 Ты — вежливый продавец-консультант в Discord магазине. 
 
@@ -39,8 +51,6 @@ SYSTEM_PROMPT = """
 **Пожелания:** (комментарии)
 """
 
-model = genai.GenerativeModel(model_name="gemini-1.5-flash", system_instruction=SYSTEM_PROMPT)
-
 intents = discord.Intents.default()
 intents.message_content = True
 client = discord.Client(intents=intents)
@@ -48,39 +58,32 @@ client = discord.Client(intents=intents)
 # Базы данных в оперативной памяти
 chat_sessions = {}
 finished_tickets = set()
-user_replied_tickets = set() # Сюда сохраняем тикеты, где клиент уже что-то написал
+user_replied_tickets = set()
 
 @client.event
 async def on_ready():
-    print(f'Бот {client.user} успешно запущен и ключи загружены!')
+    print(f'✅ Бот {client.user} успешно запущен и ключи загружены!')
 
-# === Таймер на приветствие ===
 @client.event
 async def on_guild_channel_create(channel):
     if channel.name.startswith("ticket-") and channel.name not in IGNORED_TICKETS:
         try:
-            # Получаем номер тикета (например, из "ticket-0001" получится 1)
             ticket_num = int(channel.name.split('-')[1])
             if ticket_num < START_TICKET_NUMBER:
                 return
         except (IndexError, ValueError):
             pass
 
-        # Ждем 1 час (3600 секунд). 
-        # СОВЕТ: Для тестирования поменяй 3600 на 10 (10 секунд), чтобы проверить, как работает!
-        await asyncio.sleep(10)
+        await asyncio.sleep(3600)
         
-        # Проверяем, не написал ли пользователь за этот час
         if channel.id not in user_replied_tickets:
             try:
                 await channel.send("👋 Здравствуйте! Заметил, что вы открыли тикет. Я виртуальный помощник. Подсказать вам что-то по нашим товарам?")
             except discord.errors.NotFound:
-                # Если за этот час тикет уже успели удалить, бот просто проигнорирует ошибку
                 pass
 
 @client.event
 async def on_message(message):
-    # Игнорируем самого бота и других ботов (например, самого Ticket Tool)
     if message.author.bot:
         return
 
@@ -97,20 +100,24 @@ async def on_message(message):
     except (IndexError, ValueError):
         pass
 
-    # === Фиксируем, что клиент что-то написал ===
-    # Если клиент написал, таймер приветствия из on_guild_channel_create уже не сработает
     user_replied_tickets.add(message.channel.id)
 
     if message.channel.id in finished_tickets:
         return
 
+    # === НОВЫЙ СПОСОБ СОЗДАНИЯ ЧАТА GEMINI ===
     if message.channel.id not in chat_sessions:
-        chat_sessions[message.channel.id] = model.start_chat(history=[])
+        config = types.GenerateContentConfig(system_instruction=SYSTEM_PROMPT)
+        chat_sessions[message.channel.id] = client_gemini.chats.create(
+            model="gemini-1.5-flash", 
+            config=config
+        )
 
     chat = chat_sessions[message.channel.id]
 
     async with message.channel.typing():
         try:
+            # Отправка сообщения в новом API
             response = chat.send_message(message.content)
             reply = response.text
 
