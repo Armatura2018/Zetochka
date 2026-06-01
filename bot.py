@@ -105,12 +105,11 @@ async def on_message(message):
     if message.channel.id in finished_tickets:
         return
 
-   # === НОВЫЙ СПОСОБ СОЗДАНИЯ ЧАТА GEMINI (Асинхронный) ===
+# === НОВЫЙ СПОСОБ СОЗДАНИЯ ЧАТА GEMINI (Асинхронный) ===
     if message.channel.id not in chat_sessions:
         config = types.GenerateContentConfig(system_instruction=SYSTEM_PROMPT)
-        # Используем .aio.chats для асинхронного Дискорд-бота
         chat_sessions[message.channel.id] = client_gemini.aio.chats.create(
-            model="gemini-1.5-flash", 
+            model="gemini-2.0-flash", # 👈 ИЗМЕНИЛИ НАЗВАНИЕ ЗДЕСЬ
             config=config
         )
 
