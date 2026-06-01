@@ -74,7 +74,7 @@ async def on_guild_channel_create(channel):
         except (IndexError, ValueError):
             pass
 
-        await asyncio.sleep(3600)
+        await asyncio.sleep(10)
         
         if channel.id not in user_replied_tickets:
             try:
